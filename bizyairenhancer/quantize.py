@@ -45,36 +45,36 @@ def fp8_forward(self, input):
     return output.reshape(*input_shape[:-1], output.shape[-1])
 
 
-def fp8_quantize(weight, qdtype=torch.float8_e4m3fn, mode: str = "per_tensor"):
-    weight_size = weight.size()
-    weight = weight.view(-1, weight_size[-1])
+def fp8_quantize(tensor, qdtype=torch.float8_e4m3fn, mode: str = "per_tensor"):
+    tensor_size = tensor.size()
+    tensor = tensor.view(-1, tensor_size[-1])
     if mode == "per_tensor":
-        device = weight.device
+        device = tensor.device
         finfo = torch.finfo(qdtype)
 
-        scale = finfo.max / weight.abs().max().clamp(min=1e-12)
+        scale = finfo.max / tensor.abs().max().clamp(min=1e-12)
 
-        qweight = (weight * scale).clamp(min=finfo.min, max=finfo.max)
+        qtensor = (tensor * scale).clamp(min=finfo.min, max=finfo.max)
 
-        qweight = qweight.to(qdtype)
+        qtensor = qtensor.to(qdtype)
         scale = scale.float().reciprocal()
     elif mode == "per_token":
-        device = weight.device
+        device = tensor.device
         try:
             finfo = torch.finfo(qdtype)
 
-            scale = finfo.max / weight.abs().amax(dim=1).clamp(min=1e-12)
+            scale = finfo.max / tensor.abs().amax(dim=1).clamp(min=1e-12)
 
-            qweight = (weight * scale.view(-1, 1)).clamp(min=finfo.min, max=finfo.max)
+            qtensor = (tensor * scale.view(-1, 1)).clamp(min=finfo.min, max=finfo.max)
 
-            qweight = qweight.to(qdtype)
+            qtensor = qtensor.to(qdtype)
             scale = scale.float().reciprocal()
         except Exception as e:
-            print(f"debug==== {scale.shape=}, {weight.shape=}")
+            print(f"debug==== {scale.shape=}, {tensor.shape=}")
             raise e
     elif mode == "per_channel":
         pass
-    return qweight.view(weight_size), scale, device
+    return qtensor.view(tensor_size), scale, device
 
 
 def fp8_quantize_model(model: torch.nn.Module, new_state_dict):
