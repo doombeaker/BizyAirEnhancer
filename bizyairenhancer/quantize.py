@@ -1,31 +1,45 @@
 import torch
 
-__all__ = ["sd_quantize_model", "clip_quantize_model"]
+__all__ = [
+    "fp8_quantize_model",
+]
 
 
 def fp8_forward(self, input):
-    qinput, scale, _ = fp8_quantize(input, mode="per_tensor")
+    input_mode = "per_tensor"
+    weight_mode = "per_tensor"
+    qinput, scale, _ = fp8_quantize(input, mode=input_mode)
     input_shape = qinput.shape
     try:
-        scale_fake = torch.tensor(1, device=input.device, dtype=torch.float)
-        # mm_out = torch.matmul(qinput.reshape(-1, input_shape[-1]), self.weight.t())
-        output, _ = torch._scaled_mm(
-            qinput.reshape(-1, input_shape[-1]),
-            self.weight.t(),
-            out_dtype=input.dtype,
-            scale_a=scale_fake,
-            scale_b=scale_fake,
-            bias=None,
-        )
-        output = output * scale.view(-1, 1)
-        output = output * self.scale
-        output = output.to(input.dtype)
-        if self.bias is not None:
-            output = output + self.bias
+        if weight_mode == "per_tensor":
+            output, _ = torch._scaled_mm(
+                qinput.reshape(-1, input_shape[-1]),
+                self.weight.t(),
+                out_dtype=input.dtype,
+                scale_a=scale,
+                scale_b=self.scale,
+                bias=self.bias,
+            )
+        elif weight_mode == "per_token":
+            scale_fake = torch.tensor(1, device=input.device, dtype=torch.float)
+            # mm_out = torch.matmul(qinput.reshape(-1, input_shape[-1]), self.weight.t())
+            output, _ = torch._scaled_mm(
+                qinput.reshape(-1, input_shape[-1]),
+                self.weight.t(),
+                out_dtype=input.dtype,
+                scale_a=scale_fake,
+                scale_b=scale_fake,
+                bias=None,
+            )
+            output = output * scale.view(-1, 1)
+            output = output * self.scale.view(1, -1)
+            output = output.to(input.dtype)
+            if self.bias is not None:
+                output = output + self.bias
 
     except Exception as e:
         print(
-            f"{input.shape=}, {qinput.shape=}, {self.weight.shape=}, {self.scale.dtype=}, {self.scale.shape=}"
+            f"{input.shape=}, {qinput.shape=}, {self.weight.shape=}, {self.scale.dtype=}, {self.scale.shape=}, {scale.shape=}, {scale.dtype=}"
         )
         raise e
     return output.reshape(*input_shape[:-1], output.shape[-1])
@@ -63,29 +77,21 @@ def fp8_quantize(weight, qdtype=torch.float8_e4m3fn, mode: str = "per_tensor"):
     return qweight.view(weight_size), scale, device
 
 
-def sd_quantize_model(model: torch.nn.Module, new_state_dict):
-    for name, module in model.diffusion_model.named_modules():
-        if not isinstance(module, torch.nn.Linear):
-            continue
-        weight = new_state_dict[f"{name}.weight"]
-        if module.bias is not None:
-            module.bias.data = module.bias.data.to(torch.bfloat16)
-        qweight, scale, device = fp8_quantize(weight, mode="per_tensor")
-        module.weight.data = module.weight.data.to(torch.float8_e4m3fn)
-        module.weight.data.copy_(qweight.data)
-        module.register_buffer("scale", scale)
-        new_state_dict.pop(f"{name}.weight")
-
-
-def clip_quantize_model(model: torch.nn.Module, new_state_dict):
+def fp8_quantize_model(model: torch.nn.Module, new_state_dict):
+    module_type_name = type(model).__name__
+    print(f"Quantize model: {module_type_name}")
+    qdtype = torch.float8_e4m3fn
     for name, module in model.named_modules():
         if not isinstance(module, torch.nn.Linear):
             continue
         weight = new_state_dict[f"{name}.weight"]
         if module.bias is not None:
-            module.bias.data = module.bias.data.to(torch.float16)
+            if module_type_name == "Flux":
+                module.bias.data = module.bias.data.to(torch.bfloat16)
+            elif module_type_name == "T5":
+                module.bias.data = module.bias.data.to(torch.float16)
         qweight, scale, device = fp8_quantize(weight, mode="per_tensor")
-        module.weight.data = module.weight.data.to(torch.float8_e4m3fn)
+        module.weight.data = module.weight.data.to(qdtype)
         module.weight.data.copy_(qweight.data)
         module.register_buffer("scale", scale.to(device))
         new_state_dict.pop(f"{name}.weight")
