@@ -2,6 +2,8 @@ import torch
 
 __all__ = [
     "fp8_quantize_model",
+    "fp8_dequantize",
+    "fp8_quantize",
 ]
 
 
@@ -95,3 +97,11 @@ def fp8_quantize_model(model: torch.nn.Module, new_state_dict):
         module.weight.data.copy_(qweight.data)
         module.register_buffer("scale", scale.to(device))
         new_state_dict.pop(f"{name}.weight")
+
+
+def fp8_dequantize(qtensor, scale, device):
+    scale = scale.to(device)
+    qtensor = qtensor.to(torch.float16)
+    tensor = qtensor * scale
+
+    return tensor
