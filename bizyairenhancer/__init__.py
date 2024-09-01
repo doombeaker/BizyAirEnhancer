@@ -1,2 +1,2 @@
 from .quantize import *
-from .hijack import bizyair_enhancer_hijack
+from .hijack import bizyair_enhancer_ctx

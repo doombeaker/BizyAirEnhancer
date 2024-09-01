@@ -19,7 +19,7 @@ def fp8_forward(self, input):
                 self.weight.t(),
                 out_dtype=input.dtype,
                 scale_a=scale,
-                scale_b=self.scale,
+                scale_b=self.scale.to(qinput.device),
                 bias=self.bias,
             )
         elif weight_mode == "per_token":
@@ -86,7 +86,12 @@ def fp8_quantize_model(model: torch.nn.Module, new_state_dict):
     for name, module in model.named_modules():
         if not isinstance(module, torch.nn.Linear):
             continue
-        weight = new_state_dict[f"{name}.weight"]
+        if module_type_name == "Flux":
+            if not (
+                name.startswith("double_blocks") or name.startswith("single_blocks")
+            ):
+                continue
+        weight = new_state_dict.pop(f"{name}.weight")
         if module.bias is not None:
             if module_type_name == "Flux":
                 module.bias.data = module.bias.data.to(torch.bfloat16)
@@ -96,7 +101,6 @@ def fp8_quantize_model(model: torch.nn.Module, new_state_dict):
         module.weight.data = module.weight.data.to(qdtype)
         module.weight.data.copy_(qweight.data)
         module.register_buffer("scale", scale.to(device))
-        new_state_dict.pop(f"{name}.weight")
 
 
 def fp8_dequantize(qtensor, scale, device):

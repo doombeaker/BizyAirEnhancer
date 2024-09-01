@@ -1,3 +1,5 @@
+import contextlib
+
 import torch
 from .quantize import fp8_forward
 from comfy.ops import cast_bias_weight, CastWeightBiasOp
@@ -22,5 +24,22 @@ class Linear(torch.nn.Linear, CastWeightBiasOp):
             return super().forward(*args, **kwargs)
 
 
-def bizyair_enhancer_hijack(disable_weight_init):
-    disable_weight_init.Linear = Linear
+@contextlib.contextmanager
+def bizyair_enhancer_ctx(is_bypass=False):
+    if is_bypass:
+        try:
+            print(f"bizyair_enhancer_ctx starts with no enhancment")
+            yield
+        finally:
+            pass
+    else:
+        from comfy.ops import disable_weight_init
+
+        old_linear = disable_weight_init.Linear
+        disable_weight_init.Linear = Linear
+        print("bizyaierenhacner:  hijack the Linear class")
+        try:
+            yield
+        finally:
+            disable_weight_init.Linear = old_linear
+            print("bizyaierenhacner:  revert the Linear class")
