@@ -14,6 +14,9 @@ def fp8_forward(self, input):
     input_shape = qinput.shape
     try:
         if weight_mode == "per_tensor":
+            if self.bias is not None:
+                if self.bias.dtype == torch.float8_e4m3fn:
+                    self.bias = torch.nn.Parameter(self.bias.to(dtype=torch.bfloat16))
             output, _ = torch._scaled_mm(
                 qinput.reshape(-1, input_shape[-1]),
                 self.weight.t(),
