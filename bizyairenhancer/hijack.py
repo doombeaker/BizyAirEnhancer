@@ -37,9 +37,9 @@ def bizyair_enhancer_ctx(is_bypass=False):
 
         old_linear = disable_weight_init.Linear
         disable_weight_init.Linear = Linear
-        print("bizyaierenhacner:  hijack the Linear class")
+        print("bizyairenhancer:  hijack the Linear class")
         try:
             yield
         finally:
             disable_weight_init.Linear = old_linear
-            print("bizyaierenhacner:  revert the Linear class")
+            print("bizyairenhancer:  revert the Linear class")
