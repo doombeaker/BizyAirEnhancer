@@ -4,7 +4,7 @@ from .quantize import fp8_forward, fp8_quantize
 from comfy.ops import disable_weight_init
 
 
-class online_quantize_ops(disable_weight_init):
+class fp8_quantize_ops(disable_weight_init):
     class Linear(disable_weight_init.Linear):
         def __init__(
             self,

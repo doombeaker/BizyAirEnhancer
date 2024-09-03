@@ -59,15 +59,12 @@ def load_diffusion_model_state_dict(
     )
     model_config.set_inference_dtype(unet_dtype, manual_cast_dtype)
     model_config.custom_operations = model_options.get("custom_operations", None)
+    model = model_config.get_model(new_sd, "")
+    model = model.to(offload_device)
     if is_online_quantize:
         from bizyairenhancer import fp8_quantize_model
 
-        model = model_config.get_model(new_sd, "")
-        model = model.to(offload_device)
         fp8_quantize_model(model.diffusion_model, new_sd)
-    else:
-        model = model_config.get_model(new_sd, "")
-        model = model.to(offload_device)
     model.load_model_weights(new_sd, "")
     left_over = sd.keys()
     if len(left_over) > 0:
