@@ -1,2 +1,2 @@
 from .quantize import *
-from .hijack import bizyair_enhancer_ctx
+from .bizyair_fp8_ops import fp8_quantize_ops
