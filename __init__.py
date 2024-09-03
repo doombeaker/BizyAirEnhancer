@@ -1,6 +1,7 @@
 import torch
 
 from .sd import folder_paths, load_diffusion_model
+from bizyairenhancer import online_quantize_ops
 
 
 class BizyAirFluxLoaderOnline:
@@ -24,6 +25,7 @@ class BizyAirFluxLoaderOnline:
 
     def load_unet(self, unet_name, weight_dtype):
         model_options = {}
+        model_options["custom_operations"] = online_quantize_ops
         unet_path = folder_paths.get_full_path("diffusion_models", unet_name)
         model = load_diffusion_model(unet_path, model_options=model_options)
         return (model,)
