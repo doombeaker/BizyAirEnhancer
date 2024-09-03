@@ -2,6 +2,7 @@ import torch
 
 __all__ = [
     "fp8_quantize_model",
+    "fp8_prepare_model",
     "fp8_dequantize",
     "fp8_quantize",
 ]
@@ -84,26 +85,60 @@ def fp8_quantize(tensor, qdtype=torch.float8_e4m3fn, mode: str = "per_tensor"):
 
 def fp8_quantize_model(model: torch.nn.Module, new_state_dict):
     module_type_name = type(model).__name__
-    print(f"Quantize model: {module_type_name}")
     qdtype = torch.float8_e4m3fn
+    print(f"Quantize model: {module_type_name} to {qdtype}")
+
     for name, module in model.named_modules():
         if not isinstance(module, torch.nn.Linear):
             continue
         if module_type_name == "Flux":
+            weight_key = f"{name}.weight"
+            bias_key = f"{name}.bias"
+            weight = new_state_dict.get(weight_key)
+            if bias_key in new_state_dict:
+                module.bias = torch.nn.Parameter(
+                    torch.empty(
+                        new_state_dict.get(bias_key).shape, dtype=torch.bfloat16
+                    )
+                )
             if not (
                 name.startswith("double_blocks") or name.startswith("single_blocks")
             ):
-                continue
-        weight = new_state_dict.pop(f"{name}.weight")
-        if module.bias is not None:
-            if module_type_name == "Flux":
-                module.bias.data = module.bias.data.to(torch.bfloat16)
-            elif module_type_name == "T5":
-                module.bias.data = module.bias.data.to(torch.float16)
-        qweight, scale, device = fp8_quantize(weight, mode="per_tensor")
-        module.weight.data = module.weight.data.to(qdtype)
-        module.weight.data.copy_(qweight.data)
-        module.register_buffer("scale", scale.to(device))
+                module.weight.data = module.weight.data.to(torch.bfloat16)
+            else:
+                qweight, scale, device = fp8_quantize(weight, mode="per_tensor")
+                new_state_dict[weight_key] = qweight
+                del weight
+
+                scale_key = f"{name}.scale"
+                new_state_dict[scale_key] = scale.to(device)
+                module.scale = torch.nn.Parameter(scale)
+
+
+def fp8_prepare_model(model: torch.nn.Module, new_state_dict):
+    module_type_name = type(model).__name__
+    qdtype = torch.float8_e4m3fn
+    print(f"Prepare model: {module_type_name} to {qdtype}")
+
+    for name, module in model.named_modules():
+        if not isinstance(module, torch.nn.Linear):
+            continue
+        if module_type_name == "Flux":
+            bias_key = f"{name}.bias"
+            if bias_key in new_state_dict:
+                module.bias = torch.nn.Parameter(
+                    torch.empty(
+                        new_state_dict.get(bias_key).shape, dtype=torch.bfloat16
+                    )
+                )
+            if not (
+                name.startswith("double_blocks") or name.startswith("single_blocks")
+            ):
+                module.weight.data = module.weight.data.to(torch.bfloat16)
+            else:
+                scale_key = f"{name}.scale"
+                if scale_key in new_state_dict:
+                    module.scale = torch.nn.Parameter(new_state_dict[scale_key])
 
 
 def fp8_dequantize(qtensor, scale, device):

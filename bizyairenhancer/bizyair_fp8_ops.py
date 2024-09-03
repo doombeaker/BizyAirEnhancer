@@ -17,12 +17,6 @@ class fp8_quantize_ops(disable_weight_init):
             super().__init__(
                 in_features, out_features, bias, dtype=dtype, device=device
             )
-            self.bias = nn.Parameter(
-                torch.empty(out_features, dtype=torch.bfloat16, device=device)
-            )
-            self.register_buffer(
-                "scale", torch.tensor(1, device=device, dtype=torch.float)
-            )
             self.weight = nn.Parameter(
                 torch.empty(
                     out_features, in_features, dtype=torch.float8_e4m3fn, device=device

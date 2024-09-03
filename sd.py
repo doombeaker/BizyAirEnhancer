@@ -5,6 +5,8 @@ import comfy.model_detection as model_detection
 import comfy.model_management as model_management
 import folder_paths
 
+from bizyairenhancer import fp8_quantize_model, fp8_prepare_model
+
 
 def load_diffusion_model_state_dict(
     sd, model_options={}, is_online_quantize=True
@@ -62,9 +64,9 @@ def load_diffusion_model_state_dict(
     model = model_config.get_model(new_sd, "")
     model = model.to(offload_device)
     if is_online_quantize:
-        from bizyairenhancer import fp8_quantize_model
-
         fp8_quantize_model(model.diffusion_model, new_sd)
+    else:
+        fp8_prepare_model(model.diffusion_model, new_sd)
     model.load_model_weights(new_sd, "")
     left_over = sd.keys()
     if len(left_over) > 0:
