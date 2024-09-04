@@ -1,8 +1,11 @@
+import logging
+
 import torch
 
 import comfy
 import comfy.model_detection as model_detection
 import comfy.model_management as model_management
+from comfy.sd import CLIP
 import folder_paths
 
 from bizyairenhancer import fp8_quantize_model, fp8_prepare_model
@@ -87,3 +90,85 @@ def load_diffusion_model(unet_path, model_options={}, is_online_quantize=True):
             "ERROR: Could not detect model type of: {}".format(unet_path)
         )
     return model
+
+
+from comfy.sd import CLIPType
+
+
+def load_clip(
+    ckpt_paths, embedding_directory=None, clip_type=CLIPType.FLUX, model_options={}
+):
+    clip_data = []
+    for p in ckpt_paths:
+        clip_data.append(comfy.utils.load_torch_file(p, safe_load=True))
+    return load_text_encoder_state_dicts(
+        clip_data,
+        embedding_directory=embedding_directory,
+        clip_type=clip_type,
+        model_options=model_options,
+    )
+
+
+def load_text_encoder_state_dicts(
+    state_dicts=[],
+    embedding_directory=None,
+    clip_type=CLIPType.STABLE_DIFFUSION,
+    model_options={},
+):
+    clip_data = state_dicts
+
+    class EmptyClass:
+        pass
+
+    for i in range(len(clip_data)):
+        if "transformer.resblocks.0.ln_1.weight" in clip_data[i]:
+            clip_data[i] = comfy.utils.clip_text_transformers_convert(
+                clip_data[i], "", ""
+            )
+        else:
+            if "text_projection" in clip_data[i]:
+                clip_data[i]["text_projection.weight"] = clip_data[i][
+                    "text_projection"
+                ].transpose(
+                    0, 1
+                )  # old models saved with the CLIPSave node
+
+    clip_target = EmptyClass()
+    clip_target.params = {}
+
+    weight_name = "encoder.block.23.layer.1.DenseReluDense.wi_1.weight"
+    weight = clip_data[0].get(weight_name, clip_data[1].get(weight_name, None))
+
+    # use fp8 for T5
+    dtype_t5 = torch.float8_e4m3fn
+    clip_target.clip = comfy.text_encoders.flux.flux_clip(dtype_t5=dtype_t5)
+    clip_target.tokenizer = comfy.text_encoders.flux.FluxTokenizer
+
+    parameters = 0
+    for c in clip_data:
+        parameters += comfy.utils.calculate_parameters(c)
+
+    clip = CLIP(
+        clip_target,
+        embedding_directory=embedding_directory,
+        parameters=parameters,
+        model_options=model_options,
+    )
+    for c in clip_data:
+        if not "text_model.encoder.layers.1.mlp.fc1.weight" in c:
+            if model_options["is_online"]:
+                fp8_quantize_model(clip.cond_stage_model.t5xxl.transformer, c)
+            else:
+                fp8_prepare_model(clip.cond_stage_model.t5xxl.transformer, c)
+                c = {
+                    key.replace("t5xxl.transformer.", ""): value
+                    for key, value in c.items()
+                }
+        # import pdb;pdb.set_trace()
+        m, u = clip.load_sd(c)
+        if len(m) > 0:
+            logging.warning("clip missing: {}".format(m))
+
+        if len(u) > 0:
+            logging.debug("clip unexpected: {}".format(u))
+    return clip
