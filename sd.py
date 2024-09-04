@@ -140,7 +140,7 @@ def load_text_encoder_state_dicts(
     weight = clip_data[0].get(weight_name, clip_data[1].get(weight_name, None))
 
     # use fp8 for T5
-    dtype_t5 = torch.float8_e4m3fn
+    dtype_t5 = torch.float16
     clip_target.clip = comfy.text_encoders.flux.flux_clip(dtype_t5=dtype_t5)
     clip_target.tokenizer = comfy.text_encoders.flux.FluxTokenizer
 
@@ -164,7 +164,6 @@ def load_text_encoder_state_dicts(
                     key.replace("t5xxl.transformer.", ""): value
                     for key, value in c.items()
                 }
-        # import pdb;pdb.set_trace()
         m, u = clip.load_sd(c)
         if len(m) > 0:
             logging.warning("clip missing: {}".format(m))

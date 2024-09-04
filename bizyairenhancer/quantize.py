@@ -121,7 +121,7 @@ def fp8_quantize_model(model: torch.nn.Module, new_state_dict):
             if isinstance(module, torch.nn.Linear):
                 in_features = module.in_features
                 out_features = module.out_features
-                dtype = module.weight.dtype
+                dtype = torch.float8_e4m3fn
                 device = module.weight.device
                 fp8linear = fp8_quantize_ops.Linear(
                     in_features, out_features, bias=False, dtype=dtype, device=device
