@@ -95,27 +95,27 @@ def fp8_quantize_model(model: torch.nn.Module, new_state_dict):
         for name, module in model.named_modules():
             if not isinstance(module, torch.nn.Linear):
                 continue
-                weight_key = f"{name}.weight"
-                bias_key = f"{name}.bias"
-                weight = new_state_dict.get(weight_key)
-                if bias_key in new_state_dict:
-                    module.bias = torch.nn.Parameter(
-                        torch.empty(
-                            new_state_dict.get(bias_key).shape, dtype=torch.bfloat16
-                        )
+            weight_key = f"{name}.weight"
+            bias_key = f"{name}.bias"
+            weight = new_state_dict.get(weight_key)
+            if bias_key in new_state_dict:
+                module.bias = torch.nn.Parameter(
+                    torch.empty(
+                        new_state_dict.get(bias_key).shape, dtype=torch.bfloat16
                     )
-                if not (
-                    name.startswith("double_blocks") or name.startswith("single_blocks")
-                ):
-                    module.weight.data = module.weight.data.to(torch.bfloat16)
-                else:
-                    qweight, scale, device = fp8_quantize(weight, mode="per_tensor")
-                    new_state_dict[weight_key] = qweight
-                    del weight
+                )
+            if not (
+                name.startswith("double_blocks") or name.startswith("single_blocks")
+            ):
+                module.weight.data = module.weight.data.to(torch.bfloat16)
+            else:
+                qweight, scale, device = fp8_quantize(weight, mode="per_tensor")
+                new_state_dict[weight_key] = qweight
+                del weight
 
-                    scale_key = f"{name}.scale"
-                    new_state_dict[scale_key] = scale.to(device)
-                    module.scale = torch.nn.Parameter(scale)
+                scale_key = f"{name}.scale"
+                new_state_dict[scale_key] = scale.to(device)
+                module.scale = torch.nn.Parameter(scale)
     elif module_type_name == "T5":
         for name, module in model.named_modules():
             if isinstance(module, torch.nn.Linear):
