@@ -1,3 +1,5 @@
+import gc
+
 import torch
 
 __all__ = [
@@ -87,11 +89,12 @@ def fp8_quantize_model(model: torch.nn.Module, new_state_dict):
     module_type_name = type(model).__name__
     qdtype = torch.float8_e4m3fn
     print(f"Quantize model: {module_type_name} to {qdtype}")
+    from bizyairenhancer import fp8_quantize_ops
 
-    for name, module in model.named_modules():
-        if not isinstance(module, torch.nn.Linear):
-            continue
-        if module_type_name == "Flux":
+    if module_type_name == "Flux":
+        for name, module in model.named_modules():
+            if not isinstance(module, torch.nn.Linear):
+                continue
             weight_key = f"{name}.weight"
             bias_key = f"{name}.bias"
             weight = new_state_dict.get(weight_key)
@@ -113,17 +116,52 @@ def fp8_quantize_model(model: torch.nn.Module, new_state_dict):
                 scale_key = f"{name}.scale"
                 new_state_dict[scale_key] = scale.to(device)
                 module.scale = torch.nn.Parameter(scale)
+    elif module_type_name == "T5":
+        for name, module in model.named_modules():
+            if isinstance(module, torch.nn.Linear):
+                in_features = module.in_features
+                out_features = module.out_features
+                dtype = torch.float8_e4m3fn
+                device = module.weight.device
+                fp8linear = fp8_quantize_ops.Linear(
+                    in_features, out_features, bias=False, dtype=dtype, device=device
+                )
+
+                parent_module = model
+                module_names = name.split(".")
+                for sub_name in module_names[:-1]:
+                    parent_module = getattr(parent_module, sub_name)
+                setattr(parent_module, module_names[-1], fp8linear)
+                del module
+
+                weight_key = f"{name}.weight"
+                weight = new_state_dict.get(weight_key)
+                qweight, scale, device = fp8_quantize(weight, mode="per_tensor")
+                new_state_dict[weight_key] = qweight
+                del weight
+
+                scale_key = f"{name}.scale"
+                new_state_dict[scale_key] = scale.to(device)
+                fp8linear.scale = torch.nn.Parameter(scale)
+            else:
+                module = module.to(dtype=torch.float16)
+        torch.cuda.empty_cache()
+        gc.collect()
+    else:
+        print(f"==== unmatched {module_type_name}")
 
 
 def fp8_prepare_model(model: torch.nn.Module, new_state_dict):
     module_type_name = type(model).__name__
     qdtype = torch.float8_e4m3fn
     print(f"Prepare model: {module_type_name} to {qdtype}")
+    from bizyairenhancer import fp8_quantize_ops
 
-    for name, module in model.named_modules():
-        if not isinstance(module, torch.nn.Linear):
-            continue
-        if module_type_name == "Flux":
+    if module_type_name == "Flux":
+        for name, module in model.named_modules():
+            if not isinstance(module, torch.nn.Linear):
+                continue
+
             bias_key = f"{name}.bias"
             if bias_key in new_state_dict:
                 module.bias = torch.nn.Parameter(
@@ -139,6 +177,36 @@ def fp8_prepare_model(model: torch.nn.Module, new_state_dict):
                 scale_key = f"{name}.scale"
                 if scale_key in new_state_dict:
                     module.scale = torch.nn.Parameter(new_state_dict[scale_key])
+    elif module_type_name == "T5":
+        # import pdb;pdb.set_trace()
+        for name, module in model.named_modules():
+            if isinstance(module, torch.nn.Linear):
+                in_features = module.in_features
+                out_features = module.out_features
+                dtype = module.weight.dtype
+                device = module.weight.device
+                fp8linear = fp8_quantize_ops.Linear(
+                    in_features, out_features, bias=False, dtype=dtype, device=device
+                )
+
+                parent_module = model
+                module_names = name.split(".")
+                for sub_name in module_names[:-1]:
+                    parent_module = getattr(parent_module, sub_name)
+                setattr(parent_module, module_names[-1], fp8linear)
+                del module
+
+                scale_key = f"t5xxl.transformer.{name}.scale"
+                if scale_key in new_state_dict:
+                    fp8linear.scale = torch.nn.Parameter(new_state_dict[scale_key])
+                else:
+                    print(f"not found: {scale_key}")
+            else:
+                module = module.to(dtype=torch.float8_e4m3fn)
+
+        # import pdb;pdb.set_trace()
+        torch.cuda.empty_cache()
+        gc.collect()
 
 
 def fp8_dequantize(qtensor, scale, device):
