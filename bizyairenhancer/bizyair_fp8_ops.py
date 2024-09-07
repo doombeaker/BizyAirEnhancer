@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from .quantize import fp8_forward, fp8_quantize
-from comfy.ops import disable_weight_init
+from comfy.ops import disable_weight_init, cast_bias_weight
 
 
 class fp8_quantize_ops(disable_weight_init):
