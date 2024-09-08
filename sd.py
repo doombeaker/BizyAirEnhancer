@@ -75,7 +75,10 @@ def load_diffusion_model_state_dict(
     if len(left_over) > 0:
         logging.info("left over keys in unet: {}".format(left_over))
     return comfy.model_patcher.ModelPatcher(
-        model, load_device=load_device, offload_device=offload_device
+        model,
+        load_device=load_device,
+        offload_device=offload_device,
+        weight_inplace_update=True,
     )
 
 
