@@ -78,7 +78,7 @@ def load_diffusion_model_state_dict(
         model,
         load_device=load_device,
         offload_device=offload_device,
-        weight_inplace_update=True,
+        weight_inplace_update=False,
     )
 
 
