@@ -212,6 +212,6 @@ def fp8_prepare_model(model: torch.nn.Module, new_state_dict):
 def fp8_dequantize(qtensor, scale, device):
     scale = scale.to(device)
     qtensor = qtensor.to(torch.float16)
-    tensor = qtensor * scale
+    qtensor.mul_(scale)
 
-    return tensor
+    return qtensor
