@@ -17,6 +17,12 @@ def fp8_forward(self, input):
     input_shape = qinput.shape
     try:
         if weight_mode == "per_tensor":
+            if hasattr(self, "scale"):
+                scale_b = self.scale
+            elif hasattr(self, "origin_scale"):
+                scale_b = self.origin_scale
+            else:
+                raise RuntimeError(f"{type(self)=} has no scale or origin_scale attr")
             if self.bias is not None:
                 if self.bias.dtype == torch.float8_e4m3fn:
                     self.bias = torch.nn.Parameter(self.bias.to(dtype=torch.bfloat16))
@@ -25,7 +31,7 @@ def fp8_forward(self, input):
                 self.weight.t(),
                 out_dtype=input.dtype,
                 scale_a=scale,
-                scale_b=self.scale.to(qinput.device),
+                scale_b=scale_b.to(qinput.device),
                 bias=self.bias,
             )
         elif weight_mode == "per_token":
@@ -113,9 +119,9 @@ def fp8_quantize_model(model: torch.nn.Module, new_state_dict):
                 new_state_dict[weight_key] = qweight
                 del weight
 
-                scale_key = f"{name}.scale"
-                new_state_dict[scale_key] = scale.to(device)
-                module.scale = torch.nn.Parameter(scale)
+                origin_scale = f"{name}.origin_scale"
+                new_state_dict[origin_scale] = scale.to(device)
+                module.origin_scale = torch.nn.Parameter(scale)
     elif module_type_name == "T5":
         for name, module in model.named_modules():
             if isinstance(module, torch.nn.Linear):
@@ -140,9 +146,9 @@ def fp8_quantize_model(model: torch.nn.Module, new_state_dict):
                 new_state_dict[weight_key] = qweight
                 del weight
 
-                scale_key = f"{name}.scale"
-                new_state_dict[scale_key] = scale.to(device)
-                fp8linear.scale = torch.nn.Parameter(scale)
+                origin_scale_key = f"{name}.origin_scale"
+                new_state_dict[origin_scale_key] = scale.to(device)
+                fp8linear.origin_scale = torch.nn.Parameter(scale)
             else:
                 module = module.to(dtype=torch.float16)
         torch.cuda.empty_cache()
@@ -174,9 +180,11 @@ def fp8_prepare_model(model: torch.nn.Module, new_state_dict):
             ):
                 module.weight.data = module.weight.data.to(torch.bfloat16)
             else:
-                scale_key = f"{name}.scale"
-                if scale_key in new_state_dict:
-                    module.scale = torch.nn.Parameter(new_state_dict[scale_key])
+                origin_scale_key = f"{name}.origin_scale"
+                if origin_scale_key in new_state_dict:
+                    module.origin_scale = torch.nn.Parameter(
+                        new_state_dict[origin_scale_key]
+                    )
     elif module_type_name == "T5":
         # import pdb;pdb.set_trace()
         for name, module in model.named_modules():
@@ -196,11 +204,13 @@ def fp8_prepare_model(model: torch.nn.Module, new_state_dict):
                 setattr(parent_module, module_names[-1], fp8linear)
                 del module
 
-                scale_key = f"t5xxl.transformer.{name}.scale"
-                if scale_key in new_state_dict:
-                    fp8linear.scale = torch.nn.Parameter(new_state_dict[scale_key])
+                origin_scale_key = f"t5xxl.transformer.{name}.origin_scale"
+                if origin_scale_key in new_state_dict:
+                    fp8linear.origin_scale = torch.nn.Parameter(
+                        new_state_dict[origin_scale_key]
+                    )
                 else:
-                    print(f"not found: {scale_key}")
+                    print(f"not found: {origin_scale_key}")
             else:
                 module = module.to(dtype=torch.float8_e4m3fn)
 

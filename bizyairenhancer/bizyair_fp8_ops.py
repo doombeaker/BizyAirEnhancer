@@ -24,7 +24,7 @@ class fp8_quantize_ops(disable_weight_init):
             )
 
         def forward_comfy_cast_weights(self, input):
-            if hasattr(self, "scale"):
+            if hasattr(self, "scale") or hasattr(self, "origin_scale"):
                 return fp8_forward(self, input)
             weight, bias = cast_bias_weight(self, input)
             return torch.nn.functional.linear(input, weight, bias)
@@ -33,6 +33,6 @@ class fp8_quantize_ops(disable_weight_init):
             if self.comfy_cast_weights:
                 return self.forward_comfy_cast_weights(*args, **kwargs)
             else:
-                if hasattr(self, "scale"):
+                if hasattr(self, "scale") or hasattr(self, "origin_scale"):
                     return fp8_forward(self, args[0])
                 return super().forward(*args, **kwargs)
